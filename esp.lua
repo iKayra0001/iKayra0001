@@ -635,9 +635,9 @@ for Index, Function in pairs(HookedFunctions) do
 end
 
 local MainUI = UILibrary.new(Color3.fromRGB(255, 79, 87));
-local Window = MainUI:LoadWindow('<font color="#ff4f57">iKayra</font> ESP', UDim2.fromOffset(400, 279));
-local ESP = Window.NewPage("esp");
-local Aimbot = Window.NewPage("aimbot");
+local Window = MainUI:LoadWindow('<font color="#ff4f57">iKayra's</font> ESP', UDim2.fromOffset(400, 279));
+local ESP = Window.NewPage("ESP");
+local Aimbot = Window.NewPage("Aimbot");
 local EspSettingsUI = ESP.NewSection("Esp");
 local TracerSettingsUI = ESP.NewSection("Tracers");
 local SilentAim = Aimbot.NewSection("Silent Aim");
