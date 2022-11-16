@@ -1,434 +1,797 @@
-local game = game
-local Loaded = game.Loaded
-local CWait = game.Loaded.Wait
-local CConnect = game.Loaded.Connect
-if (not game.IsLoaded(game)) then
-    CWait(game.Loaded);
+if (not game:IsLoaded()) then
+    game.Loaded:Wait();
 end
 
-local Drawing = Drawing or loadstring(game.HttpGet(game, "https://raw.githubusercontent.com/fatesc/Roblox-Drawing-Lib/main/main.lua"))();
+local UILibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/fatesc/fates-esp/main/ui.lua"))();
 
-local GetService = game.GetService
-local RunService = GetService(game, "RunService");
-local Players = GetService(game, "Players");
-local GetPlayers = Players.GetPlayers
-local Workspace = GetService(game, "Workspace");
-local HttpService = GetService(game, "HttpService");
+local PlaceId = game.PlaceId
 
-local gsub = string.gsub
-local format = string.format
-local lower = string.lower
-local floor = math.floor
+local Players = game:GetService("Players");
+local HttpService = game:GetService("HttpService");
+local Workspace = game:GetService("Workspace");
+local Teams = game:GetService("Teams")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService");
 
-local Vector3new = Vector3.new
-local Vector2new = Vector2.new
-local UDim2new = UDim2.new
-local UDimnew = UDim.new
-local CFramenew = CFrame.new
-local BrickColornew = BrickColor.new
-local Drawingnew = Drawing.new
-local Color3new = Color3.new
-local Color3fromRGB = Color3.fromRGB
-local Color3fromHSV = Color3.fromHSV
-local ToHSV = Color3new().ToHSV
-local NewVec3 = Vector3new();
-local NewVec2 = Vector2new();
+local CurrentCamera = Workspace.CurrentCamera
+local WorldToViewportPoint = CurrentCamera.WorldToViewportPoint
+local GetPartsObscuringTarget = CurrentCamera.GetPartsObscuringTarget
+
+local Inset = game:GetService("GuiService"):GetGuiInset().Y
 
 local FindFirstChild = game.FindFirstChild
 local FindFirstChildWhichIsA = game.FindFirstChildWhichIsA
 local IsA = game.IsA
-local GetChildren = game.GetChildren
+local Vector2new = Vector2.new
+local Vector3new = Vector3.new
+local CFramenew = CFrame.new
+local Color3new = Color3.new
 
-local Camera = Workspace.CurrentCamera
-local WorldToViewportPoint = Camera.WorldToViewportPoint
-local GetPartsObscuringTarget = Camera.GetPartsObscuringTarget
+local Tfind = table.find
+local create = table.create
+local format = string.format
+local floor = math.floor
+local gsub = string.gsub
+local sub = string.sub
+local lower = string.lower
+local upper = string.upper
+local random = math.random
+
+local DefaultSettings = {
+    Esp = {
+        NamesEnabled = true,
+        DisplayNamesEnabled = false,
+        DistanceEnabled = true,
+        HealthEnabled = true,
+        TracersEnabled = false,
+        BoxEsp = false,
+        TeamColors = true,
+        Thickness = 1.5,
+        TracerThickness = 1.6,
+        Transparency = .9,
+        TracerTrancparency = .7,
+        Size = 16,
+        RenderDistance = 9e9,
+        Color = Color3.fromRGB(19, 130, 226),
+        OutlineColor = Color3new(),
+        TracerTo = "Head",
+        BlacklistedTeams = {}
+    },
+    Aimbot = {
+        Enabled = false,
+        SilentAim = false,
+        Wallbang = false,
+        ShowFov = false,
+        Snaplines = true,
+        ThirdPerson = false,
+        FirstPerson = false,
+        ClosestCharacter = false,
+        ClosestCursor = true,
+        Smoothness = 1,
+        SilentAimHitChance = 100,
+        FovThickness = 1,
+        FovTransparency = 1,
+        FovSize = 150,
+        FovColor = Color3new(1, 1, 1),
+        Aimlock = "Head",
+        SilentAimRedirect = "Head",
+        BlacklistedTeams = {}
+    },
+    WindowPosition = UDim2.new(0.5, -200, 0.5, -139);
+
+    Version = 1.2
+}
+
+local EncodeConfig, DecodeConfig;
+do
+    local deepsearchset;
+    deepsearchset = function(tbl, ret, value)
+        if (type(tbl) == 'table') then
+            local new = {}
+            for i, v in next, tbl do
+                new[i] = v
+                if (type(v) == 'table') then
+                    new[i] = deepsearchset(v, ret, value);
+                end
+                if (ret(i, v)) then
+                    new[i] = value(i, v);
+                end
+            end
+            return new
+        end
+    end
+
+    DecodeConfig = function(Config)
+        local DecodedConfig = deepsearchset(Config, function(Index, Value)
+            return type(Value) == "table" and (Value.HSVColor or Value.Position);
+        end, function(Index, Value)
+            local Color = Value.HSVColor
+            local Position = Value.Position
+            if (Color) then
+                return Color3.fromHSV(Color.H, Color.S, Color.V);
+            end
+            if (Position and Position.Y and Position.X) then
+                return UDim2.new(UDim.new(Position.X.Scale, Position.X.Offset), UDim.new(Position.Y.Scale, Position.Y.Offset));
+            else
+                return DefaultSettings.WindowPosition;
+            end
+        end);
+        return DecodedConfig
+    end
+
+    EncodeConfig = function(Config)
+        local ToHSV = Color3new().ToHSV
+        local EncodedConfig = deepsearchset(Config, function(Index, Value)
+            return typeof(Value) == "Color3" or typeof(Value) == "UDim2"
+        end, function(Index, Value)
+            local Color = typeof(Value) == "Color3"
+            local Position = typeof(Value) == "UDim2"
+            if (Color) then
+                local H, S, V = ToHSV(Value);
+                return { HSVColor = { H = H, S = S, V = V } };
+            end
+            if (Position) then
+                return { Position = {
+                    X = { Scale = Value.X.Scale, Offset = Value.X.Offset };
+                    Y = { Scale = Value.Y.Scale, Offset = Value.Y.Offset }
+                } };
+            end
+        end)
+        return EncodedConfig
+    end
+end
+
+local GetConfig = function()
+    local read, data = pcall(readfile, "fates-esp.json");
+    local canDecode, config = pcall(HttpService.JSONDecode, HttpService, data);
+    if (read and canDecode) then
+        local Decoded = DecodeConfig(config);
+        if (Decoded.Version ~= DefaultSettings.Version) then
+            local Encoded = HttpService:JSONEncode(EncodeConfig(DefaultSettings));
+            writefile("fates-esp.json", Encoded);
+            return DefaultSettings;
+        end
+        return Decoded;
+    else
+        local Encoded = HttpService:JSONEncode(EncodeConfig(DefaultSettings));
+        writefile("fates-esp.json", Encoded);
+        return DefaultSettings
+    end
+end
+
+local Settings = GetConfig();
 
 local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer and LocalPlayer.GetMouse(LocalPlayer);
+local Mouse = LocalPlayer:GetMouse();
+local MouseVector = Vector2new(Mouse.X, Mouse.Y);
+local Characters = {}
 
-local CThread = function(f, ...)
-    return coroutine.wrap(f)(...);
-end
-
-local GetPlayerFromCharacter = function(Character)
-    local Plrs = GetPlayers(Players);
-    for i = 1, #Plrs do
-        if (Plrs[i].Character == Character) then
-            return Character
-        end
+local CustomGet = {
+    [0] = function()
+        return {}
     end
-    return nil
+}
+
+local Get;
+if (CustomGet[PlaceId]) then
+    Get = CustomGet[PlaceId]();
 end
+
 local GetCharacter = function(Player)
-    if (GetPlayerFromCharacter(Player)) then
-        return Player
+    if (Get) then
+        return Get.GetCharacter(Player);
     end
-    if (Player) then
-        return Player.Character
-    end
-
-    return LocalPlayer.Character
+    return Player.Character
 end
-local GetTargetRoot = function(Model, Options)
-    local Root = Options.Root or "HumanoidRootPart"
-    if (Model) then
-        return FindFirstChild(Model, Root) or FindFirstChild(Model, "Torso") or FindFirstChildWhichIsA(Model, "BasePart");
+local CharacterAdded = function(Player, Callback)
+    if (Get) then
+        return
     end
-    return nil
+    Player.CharacterAdded:Connect(Callback);
 end
-local GetTargetHumanoid = function(Model)
-    if (Model) then
-        return FindFirstChildWhichIsA(Model, "Humanoid");
+local CharacterRemoving = function(Player, Callback)
+    if (Get) then
+        return
     end
-    return nil
+    Player.CharacterRemoving:Connect(Callback);
 end
 
-local GetTargetMagnitude = function(Model, Options)
-    local IsPart = Options.Part
-    local TRoot = IsPart and Model or GetTargetRoot(Model, Options);
-    if (TRoot) then
-        local LChar = GetCharacter();
-        local LRoot = GetTargetRoot(LChar, {});
-        if (LRoot) then
-            return (TRoot.Position - LRoot.Position).Magnitude
-        end
+local GetTeam = function(Player)
+    if (Get) then
+        return Get.GetTeam(Player);
     end
-    return nil
+    return Player.Team
 end
 
 local Drawings = {}
 
-local GetVector2 = function(Model, Options)
-    local IsPart = Options.Part 
-    local To = IsPart and Model or FindFirstChild(Model, Options.To or "HumanoidRootPart") or FindFirstChild(Model, "Torso") or FindFirstChildWhichIsA(Model, "BasePart");
-    if (Model and To) then
-        return WorldToViewportPoint(Camera, To.Position);
+local AimbotSettings = Settings.Aimbot
+local EspSettings = Settings.Esp
+
+local FOV = Drawing.new("Circle");
+FOV.Color = AimbotSettings.FovColor
+FOV.Thickness = AimbotSettings.FovThickness
+FOV.Transparency = AimbotSettings.FovTransparency
+FOV.Filled = false
+FOV.Radius = AimbotSettings.FovSize
+
+local Snaplines = Drawing.new("Line");
+Snaplines.Color = AimbotSettings.FovColor
+Snaplines.Thickness = .1
+Snaplines.Transparency = 1
+Snaplines.Visible = AimbotSettings.Snaplines
+
+table.insert(Drawings, FOV);
+table.insert(Drawings, Snaplines);
+
+local HandlePlayer = function(Player)
+    local Character = GetCharacter(Player);
+    if (Character) then
+        Characters[Player] = Character
     end
-    return nil
-end
-
-local DefaultTOptions = {
-    Enabled = true,
-    To = "Head",
-    From = "Bottom",
-    Thickness = 1.6,
-    Transparency = .7,
-    Color = Color3fromRGB(20, 226, 207),
-}
-
-local DefaultEOptions = {
-    Enabled = true,
-    TeamColors = true,
-    Names = true,
-    Health = true,
-    Distance = false,
-    Thickness = 1.5,
-    To = "Head",
-    Transparency = .9,
-    Size = 16,
-    Color = Color3fromRGB(20, 226, 207),
-    OutlineColor = Color3new(),
-    Team = "All",
-    BoxEsp = false,
-    SkeletonEsp = true,
-    RenderDistance = 7000
-}
-
-local AddTracer = function(Target, Options)
-    local Tracer = Drawingnew("Line");
-
-    Options = setmetatable(Options, {
-        __index = function(self, Property)
-            local Option = DefaultTOptions[Property]
-            if (Option) then
-                self[Property] = Option
-            end
-            return Option
+    CharacterAdded(Player, function(Char)
+        Characters[Player] = Char
+    end);
+    CharacterRemoving(Player, function(Char)
+        Characters[Player] = nil
+        local PlayerDrawings = Drawings[Player]
+        if (PlayerDrawings) then
+            PlayerDrawings.Text.Visible = false
+            PlayerDrawings.Box.Visible = false
+            PlayerDrawings.Tracer.Visible = false
         end
-    });
+    end);
 
-    Tracer.From = Vector2new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y);
-    Tracer.Color = Options.Color
-    Tracer.Thickness = Options.Thickness
-    Tracer.Transparency = Options.Transparency
-    Tracer.Visible = Options.Enabled
+    if (Player == LocalPlayer) then return; end
 
-    local From, ViewportSize = Options.From, Camera.ViewportSize
-    Tracer.From = From == "Top" and Vector2new(ViewportSize.X / 2, ViewportSize.Y - ViewportSize.Y) or From == "Bottom" and Vector2new(ViewportSize.X / 2, ViewportSize.Y) or From == "Left" and Vector2new(ViewportSize.X - ViewportSize.X, ViewportSize.Y / 2) or From == "Right" and Vector2new(ViewportSize.X, ViewportSize.Y / 2);
-
-    local NewDrawing = Drawings[Target]
-    if (NewDrawing) then
-        Drawings[Target].Tracer = Tracer
-    else
-        Drawings[Target] = {
-            Tracer = Tracer,
-            Options = Options
-        }
-    end
-    return Drawings[Target].Options
-end
-
-local AddText = function(Target, Options)
-    local Text = Drawingnew("Text");
-    Options = setmetatable(Options, {
-        __index = function(self, Property)
-            local Option = DefaultEOptions[Property]
-            if (Option) then
-                self[Property] = Option
-            end
-            return Option
-        end
-    });
-
-    Text.Color = Options.Color
-    Text.OutlineColor = Options.OutlineColor
-    Text.Size = Options.Size
-    Text.Transparency = Options.Transparency
+    local Text = Drawing.new("Text");
+    Text.Color = EspSettings.Color
+    Text.OutlineColor = EspSettings.OutlineColor
+    Text.Size = EspSettings.Size
+    Text.Transparency = EspSettings.Transparency
     Text.Center = true
     Text.Outline = true
-    Text.Visible = Options.Enabled
-    Text.Text = Options.Text
 
-    local NewDrawing = Drawings[Target]
-    if (NewDrawing) then
-        Drawings[Target].Text = Text
-    else
-        Drawings[Target] = {
-            Text = Text,
-            Options = Options
-        }
-    end
-    return Drawings[Target].Options
-end
+    local Tracer = Drawing.new("Line");
+    Tracer.Color = EspSettings.Color
+    Tracer.From = Vector2new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y);
+    Tracer.Thickness = EspSettings.TracerThickness
+    Tracer.Transparency = EspSettings.TracerTrancparency
 
-local AddBox = function(Target, Options)
-    local Box = Drawingnew("Quad");
-
-    Options = setmetatable(Options, {
-        __index = function(self, Property)
-            local Option = DefaultEOptions[Property]
-            if (Option) then
-                self[Property] = Option
-            end
-            return Option
-        end
-    });
-
-    Box.PointA = NewVec2
-    Box.PointB = NewVec2
-    Box.PointC = NewVec2
-    Box.PointD = NewVec2
-    Box.Thickness = Options.Thickness
-    Box.Transparency = Options.Transparency
+    local Box = Drawing.new("Quad");
+    Box.Thickness = EspSettings.Thickness
+    Box.Transparency = EspSettings.Transparency
     Box.Filled = false
-    Box.Color = Options.Color
-    Box.Visible = Options.Enabled
-    
-    local NewDrawing = Drawings[Target]
-    if (NewDrawing) then
-        Drawings[Target].Box = Box
+    Box.Color = EspSettings.Color
+
+    Drawings[Player] = { Text = Text, Tracer = Tracer, Box = Box }
+end
+
+for Index, Player in pairs(Players:GetPlayers()) do
+    HandlePlayer(Player);
+end
+Players.PlayerAdded:Connect(function(Player)
+    HandlePlayer(Player);
+end);
+
+Players.PlayerRemoving:Connect(function(Player)
+    Characters[Player] = nil
+    local PlayerDrawings = Drawings[Player]
+    for Index, Drawing in pairs(PlayerDrawings or {}) do
+        Drawing.Visible = false
+    end
+    Drawings[Player] = nil
+end);
+
+local SetProperties = function(Properties)
+    for Player, PlayerDrawings in pairs(Drawings) do
+        if (type(Player) ~= "number") then
+            for Property, Value in pairs(Properties.Tracer or {}) do
+                PlayerDrawings.Tracer[Property] = Value
+            end
+            for Property, Value in pairs(Properties.Text or {}) do
+                PlayerDrawings.Text[Property] = Value
+            end
+            for Property, Value in pairs(Properties.Box or {}) do
+                PlayerDrawings.Box[Property] = Value
+            end
+        end
+    end
+end
+
+
+local GetClosestPlayerAndRender = function()
+    MouseVector = Vector2new(Mouse.X, Mouse.Y + Inset);
+    local Closest = create(4);
+    local Vector2Distance = math.huge
+    local Vector3DistanceOnScreen = math.huge
+    local Vector3Distance = math.huge
+
+    if (AimbotSettings.ShowFov) then
+        FOV.Position = MouseVector
+        FOV.Visible = true
+        Snaplines.Visible = false
     else
-        Drawings[Target] = {
-            Text = Box,
-            Options = Options
-        }
+        FOV.Visible = false
     end
-    return Drawings[Target].Options
-end
 
-local RemoveDrawing = function(Target)
-    local Drawing_ = Drawings[Target]
-    if (Drawing_) then
-        if (Drawing_.Text) then
-            Drawing_.Text:Remove();
-        end
-        if (Drawing_.Tracer) then
-            Drawing_.Tracer:Remove();
-        end
-        if (Drawing_.Box) then
-            Drawing_.Box:Remove();
-        end
-
-        Drawings[Target] = nil
-        return true
-    end
-    return false
-end
-
-local Render = RunService.RenderStepped.Connect(RunService.RenderStepped, function()
-    for i, v in next, Drawings do
-        local Options = v.Options
-        if (not i) then
-            if (Options.RemoveOnDestroy) then
-                table.remove(Drawings, i);
+    local LocalRoot = Characters[LocalPlayer] and FindFirstChild(Characters[LocalPlayer], "HumanoidRootPart");
+    for Player, Character in pairs(Characters) do
+        if (Player == LocalPlayer) then continue; end
+        local PlayerDrawings = Drawings[Player]
+        local PlayerRoot = FindFirstChild(Character, "HumanoidRootPart");
+        local PlayerTeam = GetTeam(Player);
+        if (PlayerRoot) then
+            local Redirect = FindFirstChild(Character, AimbotSettings.Aimlock);
+            if (not Redirect) then
+                PlayerDrawings.Text.Visible = false
+                PlayerDrawings.Box.Visible = false
+                PlayerDrawings.Tracer.Visible = false
+                continue;
             end
-        end
-        if (i == LocalPlayer) then
-            continue;
-        end
-        local Enabled = Options.Enabled
-        local Box, Tracer, Text = v.Box, v.Tracer, v.Text
+            local RedirectPos = Redirect.Position
+            local Tuple, Visible = WorldToViewportPoint(CurrentCamera, RedirectPos);
+            local CharacterVec2 = Vector2new(Tuple.X, Tuple.Y);
+            local Vector2Magnitude = (MouseVector - CharacterVec2).Magnitude
+            local Vector3Magnitude = LocalRoot and (RedirectPos - LocalRoot.Position).Magnitude or math.huge
+            local InRenderDistance = Vector3Magnitude <= EspSettings.RenderDistance
 
-        local Model = i
-        if (Options.IsPlayer or Options.IsPlayerFromCharacter) then
-            Model = i.Character
-            if (Options.IsPlayerFromCharacter) then
-                local Player = GetPlayerFromCharacter(i);
-                if (Player) then
-                    Model = Player.Character
+            if (not Tfind(AimbotSettings.BlacklistedTeams, PlayerTeam)) then
+                local InFovRadius = Vector2Magnitude <= FOV.Radius
+                if (InFovRadius) then
+                    if (Visible and Vector2Magnitude <= Vector2Distance and AimbotSettings.ClosestCursor) then
+                        Vector2Distance = Vector2Magnitude
+                        Closest = {Character, CharacterVec2, Player, Redirect}
+                        if (AimbotSettings.Snaplines and AimbotSettings.ShowFov) then
+                            Snaplines.Visible = true
+                            Snaplines.From = MouseVector
+                            Snaplines.To = CharacterVec2
+                        else
+                            Snaplines.Visible = false
+                        end
+                    end
+
+                    if (Visible and Vector3Magnitude <= Vector3DistanceOnScreen and Settings.ClosestPlayer) then
+                        Vector3DistanceOnScreen = Vector3Magnitude
+                        Closest = {Character, CharacterVec2, Player, Redirect}
+                    end
                 end
             end
-        end
 
-        if (Text or Box) then
-            if (not Model) then
-                if (Text) then
-                    Text.Visible = false
-                end
-                if (Box) then
-                    Box.Visible = false
-                end
-                continue
-            end
-            
+            if (InRenderDistance and Visible and not Tfind(EspSettings.BlacklistedTeams, PlayerTeam)) then
+                local CharacterHumanoid = FindFirstChildWhichIsA(Character, "Humanoid") or { Health = 0, MaxHealth = 0 };
+                PlayerDrawings.Text.Text = format("%s\n%s%s",
+                        EspSettings.NamesEnabled and Player.Name or "",
+                        EspSettings.DistanceEnabled and format("[%s]",
+                            floor(Vector3Magnitude)
+                        ) or "",
+                        EspSettings.HealthEnabled and format(" [%s/%s]",
+                            floor(CharacterHumanoid.Health),
+                            floor(CharacterHumanoid.MaxHealth)
+                        )  or ""
+                    );
 
-            local TextTuple, TextVisible = GetVector2(Model, Options);
-            if (Text and TextTuple and TextVisible) then
-                local Magnitude, Humanoid = GetTargetMagnitude(Model, Options), GetTargetHumanoid(Model) or {Health=0,MaxHealth=0}
-                if (Magnitude and Options.RenderDistance and Magnitude >= Options.RenderDistance or Magnitude >= math.huge) then
-                    Text.Visible = false
+                PlayerDrawings.Text.Position = Vector2new(Tuple.X, Tuple.Y - 40);
+
+                if (EspSettings.TracersEnabled) then
+                    PlayerDrawings.Tracer.To = CharacterVec2
                 end
 
-                Text.Visible = true
-                Text.Position = Vector2new(TextTuple.X, TextTuple.Y - 40);
-                Text.Text = format(("%s\n%s %s"), Options.Text, Options.ShowDistance and format("[%s]", (floor(Magnitude or math.huge))) or "", Options.ShowHealth and format("[%s/%s]", floor(Humanoid.Health), floor(Humanoid.MaxHealth)) or "");
+                if (EspSettings.BoxEsp) then
+                    local Parts = {}
+                    for Index, Part in pairs(Character:GetChildren()) do
+                        if (IsA(Part, "BasePart")) then
+                            local ViewportPos = WorldToViewportPoint(CurrentCamera, Part.Position);
+                            Parts[Part] = Vector2new(ViewportPos.X, ViewportPos.Y);
+                        end
+                    end
+
+                    local Top, Bottom, Left, Right
+                    local Distance = math.huge
+                    local ClosestPart = nil
+                    for i2, Pos in next, Parts do
+                        local Mag = (Pos - Vector2new(Tuple.X, 0)).Magnitude;
+                        if (Mag <= Distance) then
+                            ClosestPart = Pos
+                            Distance = Mag
+                        end
+                    end
+                    Top = ClosestPart
+                    ClosestPart = nil
+                    Distance = math.huge
+                    for i2, Pos in next, Parts do
+                        local Mag = (Pos - Vector2new(Tuple.X, CurrentCamera.ViewportSize.Y)).Magnitude;
+                        if (Mag <= Distance) then
+                            ClosestPart = Pos
+                            Distance = Mag
+                        end
+                    end
+                    Bottom = ClosestPart
+                    ClosestPart = nil
+                    Distance = math.huge
+                    for i2, Pos in next, Parts do
+                        local Mag = (Pos - Vector2new(0, Tuple.Y)).Magnitude;
+                        if (Mag <= Distance) then
+                            ClosestPart = Pos
+                            Distance = Mag
+                        end
+                    end
+                    Left = ClosestPart
+                    ClosestPart = nil
+                    Distance = math.huge
+                    for i2, Pos in next, Parts do
+                        local Mag = (Pos - Vector2new(CurrentCamera.ViewportSize.X, Tuple.Y)).Magnitude;
+                        if (Mag <= Distance) then
+                            ClosestPart = Pos
+                            Distance = Mag
+                        end
+                    end
+                    Right = ClosestPart
+                    ClosestPart = nil
+                    Distance = math.huge
+
+                    PlayerDrawings.Box.PointA = Vector2new(Right.X, Top.Y);
+                    PlayerDrawings.Box.PointB = Vector2new(Left.X, Top.Y);
+                    PlayerDrawings.Box.PointC = Vector2new(Left.X, Bottom.Y);
+                    PlayerDrawings.Box.PointD = Vector2new(Right.X, Bottom.Y);
+                end
+
+                if (EspSettings.TeamColors) then
+                    local TeamColor;
+                    if (PlayerTeam) then
+                        local BrickTeamColor = PlayerTeam.TeamColor
+                        TeamColor = BrickTeamColor.Color
+                    else
+                        TeamColor = Color3new(0.639216, 0.635294, 0.647059);
+                    end
+                    PlayerDrawings.Text.Color = TeamColor
+                    PlayerDrawings.Box.Color = TeamColor
+                    PlayerDrawings.Tracer.Color = TeamColor
+                end
+
+                PlayerDrawings.Text.Visible = true
+                PlayerDrawings.Box.Visible = EspSettings.BoxEsp
+                PlayerDrawings.Tracer.Visible = EspSettings.TracersEnabled
             else
-                if (Text) then
-                    Text.Visible = false
-                end
-                if (Box) then
-                    Box.Visible = false
-                end
+                PlayerDrawings.Text.Visible = false
+                PlayerDrawings.Box.Visible = false
+                PlayerDrawings.Tracer.Visible = false
             end
-            if (Box) then
-                local Parts = {}
-                for i2, Part in next, GetChildren(Model) do
-                    if (IsA(Part, "BasePart")) then
-                        local ViewportPos = WorldToViewportPoint(Camera, Part.Position);
-                        Parts[Part] = Vector2new(ViewportPos.X, ViewportPos.Y);
-                    end
-                end
-                local Top, Bottom, Left, Right
-                local Distance = math.huge
-                local Closest = nil
-                for i2, Pos in next, Parts do
-                    local Mag = (Pos - Vector2new(TextTuple.X, 0)).Magnitude;
-                    if (Mag <= Distance) then
-                        Closest = Pos
-                        Distance = Mag
-                    end
-                end
-                Top = Closest
-                Closest = nil
-                Distance = math.huge
-                for i2, Pos in next, Parts do
-                    local Mag = (Pos - Vector2new(TextTuple.X, Camera.ViewportSize.Y)).Magnitude;
-                    if (Mag <= Distance) then
-                        Closest = Pos
-                        Distance = Mag
-                    end
-                end
-                Bottom = Closest
-                Closest = nil
-                Distance = math.huge
-                for i2, Pos in next, Parts do
-                    local Mag = (Pos - Vector2new(0, TextTuple.Y)).Magnitude;
-                    if (Mag <= Distance) then
-                        Closest = Pos
-                        Distance = Mag
-                    end
-                end
-                Left = Closest
-                Closest = nil
-                Distance = math.huge
-                for i2, Pos in next, Parts do
-                    local Mag = (Pos - Vector2new(Camera.ViewportSize.X, TextTuple.Y)).Magnitude;
-                    if (Mag <= Distance) then
-                        Closest = Pos
-                        Distance = Mag
-                    end
-                end
-                Right = Closest
-                Closest = nil
-                Distance = math.huge
-    
-                Box.PointA = Vector2new(Right.X, Top.Y);
-                Box.PointB = Vector2new(Left.X, Top.Y);
-                Box.PointC = Vector2new(Left.X, Bottom.Y);
-                Box.PointD = Vector2new(Right.X, Bottom.Y);
-                Box.Visible = true
-            end
+        else
+            PlayerDrawings.Text.Visible = false
+            PlayerDrawings.Box.Visible = false
+            PlayerDrawings.Tracer.Visible = false
         end
-        if (Tracer) then
-            if (not Model) then
-                Tracer.Visible = false
-            end
-            
-            local TracerTuple, TracerVisible = GetVector2(Model, Options);
-            if (TracerTuple and TracerVisible) then
-                Tracer.Visible = true
-                Tracer.To = Vector2new(TracerTuple.X, TracerTuple.Y);
+    end
+
+    return unpack(Closest);
+end
+
+local Locked, SwitchedCamera = false, false
+UserInputService.InputBegan:Connect(function(Inp)
+    if (AimbotSettings.Enabled and Inp.UserInputType == Enum.UserInputType.MouseButton2) then
+        Locked = true
+        if (AimbotSettings.FirstPerson and LocalPlayer.CameraMode ~= Enum.CameraMode.LockFirstPerson) then
+            LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+            SwitchedCamera = true
+        end
+    end
+end);
+UserInputService.InputEnded:Connect(function(Inp)
+    if (AimbotSettings.Enabled and Inp.UserInputType == Enum.UserInputType.MouseButton2) then
+        Locked = false
+        if (SwitchedCamera) then
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        end
+    end
+end);
+
+local ClosestCharacter, Vector, Player, Aimlock;
+RunService.RenderStepped:Connect(function()
+    ClosestCharacter, Vector, Player, Aimlock = GetClosestPlayerAndRender();
+    if (Locked and AimbotSettings.Enabled and ClosestCharacter) then
+        if (AimbotSettings.FirstPerson) then
+            if (syn) then
+                CurrentCamera.CoordinateFrame = CFramenew(CurrentCamera.CoordinateFrame.p, Aimlock.Position);
             else
-                Tracer.Visible = false
+                mousemoverel((Vector.X - MouseVector.X) / AimbotSettings.Smoothness, (Vector.Y - MouseVector.Y) / AimbotSettings.Smoothness);
+            end
+        elseif (AimbotSettings.ThirdPerson) then
+            mousemoveabs(Vector.X, Vector.Y);
+        end
+    end
+end);
+
+local Hooks = {
+    HookedFunctions = {},
+    OldMetaMethods = {},
+    MetaMethodHooks = {},
+    HookedSignals = {}
+}
+
+local OtherDeprecated = {
+    children = "GetChildren"
+}
+
+local RealMethods = {}
+local FakeMethods = {}
+
+local HookedFunctions = Hooks.HookedFunctions
+local MetaMethodHooks = Hooks.MetaMethodHooks
+local OldMetaMethods = Hooks.OldMetaMethods
+
+local randomised = random(1, 10);
+local randomisedVector = Vector3new(random(1, 10), random(1, 10), random(1, 10));
+Mouse.Move:Connect(function()
+    randomised = random(1, 10);
+    randomisedVector = Vector3new(random(1, 10), random(1, 10), random(1, 10));
+end);
+
+local x = setmetatable({}, {
+    __index = function(...)
+        print("index", ...);
+    end,
+    __add = function(...)
+        print("add", ...);
+    end,
+    __sub = function(...)
+        print("sub", ...);
+    end,
+    __mul = function(...)
+        print("mul", ...);
+    end
+});
+
+MetaMethodHooks.Index = function(...)
+    local __Index = OldMetaMethods.__index
+
+    if (Player and Aimlock and ... == Mouse and not checkcaller()) then
+        local CallingScript = getfenv(2).script;
+        if (CallingScript.Name == "CallingScript") then
+            return __Index(...);
+        end
+
+        local _Mouse, Index = ...
+        if (type(Index) == 'string') then
+            Index = gsub(sub(Index, 0, 100), "%z.*", "");
+        end
+        local PassedChance = random(1, 100) < AimbotSettings.SilentAimHitChance
+        if (PassedChance and AimbotSettings.SilentAim) then
+            local Parts = GetPartsObscuringTarget(CurrentCamera, {CurrentCamera.CFrame.Position, Aimlock.Position}, {LocalPlayer.Character, ClosestCharacter});
+
+            Index = string.gsub(Index, "^%l", upper);
+            local Hit = #Parts == 0 or AimbotSettings.Wallbang
+            if (not Hit) then
+                return __Index(...);
+            end
+            if (Index == "Target") then
+                return Aimlock
+            end
+            if (Index == "Hit") then
+                local hit = __Index(...);
+                local pos = Aimlock.Position + randomisedVector / 10
+                return CFramenew(pos.X, pos.Y, pos.Z, unpack({hit:components()}, 4));
+            end
+            if (Index == "X") then
+                return Vector.X + randomised / 10
+            end
+            if (Index == "Y") then
+                return Vector.Y + randomised / 10
             end
         end
     end
-end)
 
-CConnect(Workspace.DescendantRemoving, function(Removed)
-    for i, v in next, Drawings do
-        if (v.Options.OnRemoved) then
-            if (i == Removed) then
-                RemoveDrawing(i);
+    return __Index(...);
+end
+
+MetaMethodHooks.Namecall = function(...)
+    local __Namecall = OldMetaMethods.__namecall
+    local self = ...
+    local Method = gsub(getnamecallmethod() or "", "^%l", upper);
+    local Hooked = HookedFunctions[Method]
+    if (Hooked and self == Hooked[1]) then
+        return Hooked[3](...);
+    end
+
+    return __Namecall(...);
+end
+
+for MMName, MMFunc in pairs(MetaMethodHooks) do
+    local MetaMethod = string.format("__%s", string.lower(MMName));
+    Hooks.OldMetaMethods[MetaMethod] = hookmetamethod(game, MetaMethod, MMFunc);
+end
+
+HookedFunctions.FindPartOnRay = {Workspace, Workspace.FindPartOnRay, function(...)
+    local OldFindPartOnRay = HookedFunctions.FindPartOnRay[4]
+    if (AimbotSettings.SilentAim and Player and Aimlock and not checkcaller()) then
+        local PassedChance = random(1, 100) < AimbotSettings.SilentAimHitChance
+        if (ClosestCharacter and PassedChance) then
+            local Parts = GetPartsObscuringTarget(CurrentCamera, {CurrentCamera.CFrame.Position, Aimlock.Position}, {LocalPlayer.Character, ClosestCharacter});
+            if (#Parts == 0 or AimbotSettings.Wallbang) then
+                return Aimlock, Aimlock.Position + (Vector3new(random(1, 10), random(1, 10), random(1, 10)) / 10), Vector3new(0, 1, 0), Aimlock.Material
             end
         end
     end
-end)
+    return OldFindPartOnRay(...);
+end};
 
-local Esp = {}
-
-Esp.new = function(Type, Options)
-    local Target = Options.Target
-    local TargetType = typeof(Target);
-    assert(TargetType == 'Instance', format("Instance expected got %s", TargetType));    
-    assert(Type == "Tracer" or Type == "Text" or Type == "Box", "Invalid type");
-
-    local IsPlayerCharacter = GetPlayerFromCharacter(Target) ~= nil
-    local IsPlayer = IsA(Target, "Player");
-    Options.IsPlayer = IsPlayer
-    Options.IsPlayerCharacter = IsPlayerCharacter
-    Options.Text = Options.Text or Target.Name
-
-    local Added
-    if (Type == "Tracer") then
-        Added = AddTracer(Target, Options);
-    end
-    if (Type == "Text") then
-        Added = AddText(Target, Options);
-    end
-    if (Type == "Box") then
-        Added = AddBox(Target, Options);
-    end
-
-    return Added
-end
-
-Esp.Remove = function(Target)
-    for i, v in next, Drawings do
-        if (v.Options and i == Target or Target == 'All') then
-            RemoveDrawing(i);
+HookedFunctions.FindPartOnRayWithIgnoreList = {Workspace, Workspace.FindPartOnRayWithIgnoreList, function(...)
+    local OldFindPartOnRayWithIgnoreList = HookedFunctions.FindPartOnRayWithIgnoreList[4]
+    if (Player and Aimlock and not checkcaller()) then
+        local CallingScript = getcallingscript();
+        local PassedChance = random(1, 100) < AimbotSettings.SilentAimHitChance
+        if (CallingScript.Name ~= "ControlModule" and ClosestCharacter and PassedChance) then
+            local Parts = GetPartsObscuringTarget(CurrentCamera, {CurrentCamera.CFrame.Position, Aimlock.Position}, {LocalPlayer.Character, ClosestCharacter});
+            if (#Parts == 0 or AimbotSettings.Wallbang) then
+                return Aimlock, Aimlock.Position + (Vector3new(random(1, 10), random(1, 10), random(1, 10)) / 10), Vector3new(0, 1, 0), Aimlock.Material
+            end
         end
     end
+    return OldFindPartOnRayWithIgnoreList(...);
+end};
+
+for Index, Function in pairs(HookedFunctions) do
+    Function[4] = hookfunction(Function[2], Function[3]);
 end
 
-return Esp
+local MainUI = UILibrary.new(Color3.fromRGB(255, 79, 87));
+local Window = MainUI:LoadWindow('<font color="#ff4f57">fates</font> esp', UDim2.fromOffset(400, 279));
+local ESP = Window.NewPage("esp");
+local Aimbot = Window.NewPage("aimbot");
+local EspSettingsUI = ESP.NewSection("Esp");
+local TracerSettingsUI = ESP.NewSection("Tracers");
+local SilentAim = Aimbot.NewSection("Silent Aim");
+local Aimbot = Aimbot.NewSection("Aimbot");
+
+EspSettingsUI.Toggle("Show Names", EspSettings.NamesEnabled, function(Callback)
+    EspSettings.NamesEnabled = Callback
+end);
+EspSettingsUI.Toggle("Show Health", EspSettings.HealthEnabled, function(Callback)
+    EspSettings.HealthEnabled = Callback
+end);
+EspSettingsUI.Toggle("Show Distance", EspSettings.DistanceEnabled, function(Callback)
+    EspSettings.DistanceEnabled = Callback
+end);
+EspSettingsUI.Toggle("Box Esp", EspSettings.BoxEsp, function(Callback)
+    EspSettings.BoxEsp = Callback
+    SetProperties({ Box = { Visible = Callback } });
+end);
+EspSettingsUI.Slider("Render Distance", { Min = 0, Max = 50000, Default = math.clamp(EspSettings.RenderDistance, 0, 50000), Step = 10 }, function(Callback)
+    EspSettings.RenderDistance = Callback
+end);
+EspSettingsUI.Slider("Esp Size", { Min = 0, Max = 30, Default = EspSettings.Size, Step = 1}, function(Callback)
+    EspSettings.Size = Callback
+    SetProperties({ Text = { Size = Callback } });
+end);
+EspSettingsUI.ColorPicker("Esp Color", EspSettings.Color, function(Callback)
+    EspSettings.TeamColors = false
+    EspSettings.Color = Callback
+    SetProperties({ Box = { Color = Callback }, Text = { Color = Callback }, Tracer = { Color = Callback } });
+end);
+EspSettingsUI.Toggle("Team Colors", EspSettings.TeamColors, function(Callback)
+    EspSettings.TeamColors = Callback
+    if (not Callback) then
+        SetProperties({ Tracer = { Color = EspSettings.Color }; Box = { Color = EspSettings.Color }; Text = { Color = EspSettings.Color }  })
+    end
+end);
+EspSettingsUI.Dropdown("Teams", {"Allies", "Enemies", "All"}, function(Callback)
+    table.clear(EspSettings.BlacklistedTeams);
+    if (Callback == "Enemies") then
+        table.insert(EspSettings.BlacklistedTeams, LocalPlayer.Team);
+    end
+    if (Callback == "Allies") then
+        local AllTeams = Teams:GetTeams();
+        table.remove(AllTeams, table.find(AllTeams, LocalPlayer.Team));
+        EspSettings.BlacklistedTeams = AllTeams
+    end
+end);
+TracerSettingsUI.Toggle("Enable Tracers", EspSettings.TracersEnabled, function(Callback)
+    EspSettings.TracersEnabled = Callback
+    SetProperties({ Tracer = { Visible = Callback } });
+end);
+TracerSettingsUI.Dropdown("To", {"Head", "Torso"}, function(Callback)
+    AimbotSettings.Aimlock = Callback == "Torso" and "HumanoidRootPart" or Callback
+end);
+TracerSettingsUI.Dropdown("From", {"Top", "Bottom", "Left", "Right"}, function(Callback)
+    local ViewportSize = CurrentCamera.ViewportSize
+    local From = Callback == "Top" and Vector2new(ViewportSize.X / 2, ViewportSize.Y - ViewportSize.Y) or Callback == "Bottom" and Vector2new(ViewportSize.X / 2, ViewportSize.Y) or Callback == "Left" and Vector2new(ViewportSize.X - ViewportSize.X, ViewportSize.Y / 2) or Callback == "Right" and Vector2new(ViewportSize.X, ViewportSize.Y / 2);
+    EspSettings.TracerFrom = From
+    SetProperties({ Tracer = { From = From } });
+end);
+TracerSettingsUI.Slider("Tracer Transparency", {Min = 0, Max = 1, Default = EspSettings.TracerTrancparency, Step = .1}, function(Callback)
+    EspSettings.TracerTrancparency = Callback
+    SetProperties({ Tracer = { Transparency = Callback } });
+end);
+TracerSettingsUI.Slider("Tracer Thickness", {Min = 0, Max = 5, Default = EspSettings.TracerThickness, Step = .1}, function(Callback)
+    EspSettings.TracerThickness = Callback
+    SetProperties({ Tracer = { Thickness = Callback } });
+end);
+
+SilentAim.Toggle("Silent Aim", AimbotSettings.SilentAim, function(Callback)
+    AimbotSettings.SilentAim = Callback
+end);
+SilentAim.Toggle("Wallbang", AimbotSettings.Wallbang, function(Callback)
+    AimbotSettings.Wallbang = Callback
+end);
+SilentAim.Dropdown("Redirect", {"Head", "Torso"}, function(Callback)
+    AimbotSettings.SilentAimRedirect = Callback
+end);
+SilentAim.Slider("Hit Chance", {Min = 0, Max = 100, Default = AimbotSettings.SilentAimHitChance, Step = 1}, function(Callback)
+    AimbotSettings.SilentAimHitChance = Callback
+end);
+
+SilentAim.Dropdown("Lock Type", {"Closest Cursor", "Closest Player"}, function(Callback)
+    if (Callback == "Closest Cursor") then
+        AimbotSettings.ClosestCharacter = false
+        AimbotSettings.ClosestCursor = true
+    else
+        AimbotSettings.ClosestCharacter = true
+        AimbotSettings.ClosestCursor = false
+    end
+end);
+
+Aimbot.Toggle("Aimbot (M2)", AimbotSettings.Enabled, function(Callback)
+    AimbotSettings.Enabled = Callback
+    if (not AimbotSettings.FirstPerson and not AimbotSettings.ThirdPerson) then
+        AimbotSettings.FirstPerson = true
+    end
+end);
+Aimbot.Slider("Aimbot Smoothness", {Min = 1, Max = 10, Default = AimbotSettings.Smoothness, Step = .5}, function(Callback)
+    AimbotSettings.Smoothness = Callback
+end);
+local sortTeams = function(Callback)
+    table.clear(AimbotSettings.BlacklistedTeams);
+    if (Callback == "Enemies") then
+        table.insert(AimbotSettings.BlacklistedTeams, LocalPlayer.Team);
+    end
+    if (Callback == "Allies") then
+        local AllTeams = Teams:GetTeams();
+        table.remove(AllTeams, table.find(AllTeams, LocalPlayer.Team));
+        AimbotSettings.BlacklistedTeams = AllTeams
+    end
+end
+Aimbot.Dropdown("Team Target", {"Allies", "Enemies", "All"}, sortTeams);
+sortTeams("Enemies");
+Aimbot.Dropdown("Aimlock Type", {"Third Person", "First Person"}, function(callback)
+    if (callback == "Third Person") then
+        AimbotSettings.ThirdPerson = true
+        AimbotSettings.FirstPerson = false
+    else
+        AimbotSettings.ThirdPerson = false
+        AimbotSettings.FirstPerson = true
+    end
+end);
+
+Aimbot.Toggle("Show Fov", AimbotSettings.ShowFov, function(Callback)
+    AimbotSettings.ShowFov = Callback
+    FOV.Visible = Callback
+end);
+Aimbot.ColorPicker("Fov Color", AimbotSettings.FovColor, function(Callback)
+    AimbotSettings.FovColor = Callback
+    FOV.Color = Callback
+    Snaplines.Color = Callback
+end);
+Aimbot.Slider("Fov Size", {Min = 70, Max = 500, Default = AimbotSettings.FovSize, Step = 10}, function(Callback)
+    AimbotSettings.FovSize = Callback
+    FOV.Radius = Callback
+end);
+Aimbot.Toggle("Enable Snaplines", AimbotSettings.Snaplines, function(Callback)
+    AimbotSettings.Snaplines = Callback
+end);
+Window.SetPosition(Settings.WindowPosition);
+
+if (gethui) then
+    MainUI.UI.Parent = gethui();
+else
+    local protect_gui = (syn or getgenv()).protect_gui
+    if (protect_gui) then
+        protect_gui(MainUI.UI);
+    end
+    MainUI.UI.Parent = game:GetService("CoreGui");
+end
+
+while wait(5) do
+    Settings.WindowPosition = Window.GetPosition();
+    local Encoded = HttpService:JSONEncode(EncodeConfig(Settings));
+    writefile("fates-esp.json", Encoded);
+end
