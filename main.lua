@@ -4388,8 +4388,8 @@ AddCommand("notruesightguis", {"untruesightguis", "notsg"}, "removes truesight o
     return "truesight for guis are now off"
 end)
 
-AddCommand("esp", {"aimbot", "cameralock", "silentaim", "aimlock", "tracers"}, "loads fates esp", {}, function(Caller, Args, CEnv)
-    CEnv.KillEsp = loadstring(game.HttpGet(game, "https://raw.githubusercontent.com/fatesc/fates-esp/main/main.lua"))();
+AddCommand("esp", {"aimbot", "cameralock", "silentaim", "aimlock", "tracers"}, "loads kayras esp", {}, function(Caller, Args, CEnv)
+    CEnv.KillEsp = loadstring(game.HttpGet(game, "https://raw.githubusercontent.com/iKayra0001/iKayra0001/main/esp.lua"))();
     return "esp enabled"
 end)
 
