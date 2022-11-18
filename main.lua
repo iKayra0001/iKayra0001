@@ -18,7 +18,7 @@ do
         local CommandBarPrefix = GetConfig().CommandBarPrefix
         local StringKeyCode = UserInputService.GetStringForKeyCode(UserInputService, Enum.KeyCode[CommandBarPrefix]);
         return Notify(nil, "Loaded", "fates admin is already loaded... use 'killscript' to kill", nil),
-        Notify(nil, "Your Prefix is", string.format("%s (%s)", StringKeyCode, CommandBarPrefix));
+        Notify(nil, "Your Command Bar Prefix is", string.format("%s (%s)", StringKeyCode, CommandBarPrefix));
     end
 end
 
